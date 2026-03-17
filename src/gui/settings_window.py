@@ -1,6 +1,6 @@
 import pyaudio
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QLineEdit, QPushButton, QMessageBox, QSlider)
+                             QComboBox, QLineEdit, QPushButton, QMessageBox, QSlider, QCheckBox)
 from PyQt6.QtCore import pyqtSignal, Qt
 import evdev
 from evdev import ecodes
@@ -28,11 +28,23 @@ class SettingsWindow(QWidget):
         self.populate_audio_devices()
         self.layout().addWidget(self.device_combo)
 
+        # Inference Mode
+        self.layout().addWidget(QLabel("Inference Real-Time Mode:"))
+        self.inference_mode_combo = QComboBox()
+        self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
+        self.inference_mode_combo.setCurrentText(self.config.get("inference_mode", "Balanced"))
+        self.layout().addWidget(self.inference_mode_combo)
+
         # Keyboard Device Selection (evdev)
         self.layout().addWidget(QLabel("Keyboard Event Device (evdev):"))
         self.kbd_combo = QComboBox()
         self.populate_keyboard_devices()
         self.layout().addWidget(self.kbd_combo)
+        
+        # Overlay Toggle
+        self.overlay_checkbox = QCheckBox("Display Real-Time Overlay")
+        self.overlay_checkbox.setChecked(self.config.get("show_overlay", True))
+        self.layout().addWidget(self.overlay_checkbox)
 
         # Microphone Boost (Gain)
         self.layout().addWidget(QLabel("Microphone Boost (Software Gain):"))
@@ -50,22 +62,36 @@ class SettingsWindow(QWidget):
         gain_layout.addWidget(self.gain_label)
         self.layout().addLayout(gain_layout)
         
-        # Hotkey Selection
-        self.layout().addWidget(QLabel("Global Hotkey:"))
+        # Hold Hotkey Selection
+        self.layout().addWidget(QLabel("Global 'Hold-to-Talk' Hotkey:"))
         h_layout = QHBoxLayout()
         self.hotkey_label = QLabel(", ".join(self.config.get("hotkey", ["KEY_LEFTMETA", "KEY_SPACE"])))
         self.hotkey_label.setStyleSheet("font-weight: bold; border: 1px solid #ccc; padding: 5px;")
         h_layout.addWidget(self.hotkey_label)
         
-        self.record_btn = QPushButton("Record")
-        self.record_btn.setCheckable(True)
-        self.record_btn.clicked.connect(self.toggle_recording)
-        h_layout.addWidget(self.record_btn)
+        self.record_btn_hold = QPushButton("Record")
+        self.record_btn_hold.setCheckable(True)
+        self.record_btn_hold.clicked.connect(lambda: self.toggle_recording("hold"))
+        h_layout.addWidget(self.record_btn_hold)
         self.layout().addLayout(h_layout)
+
+        # Toggle Hotkey Selection
+        self.layout().addWidget(QLabel("Global 'Toggle-to-Talk' Hotkey:"))
+        t_layout = QHBoxLayout()
+        self.toggle_hotkey_label = QLabel(", ".join(self.config.get("toggle_hotkey", ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"])))
+        self.toggle_hotkey_label.setStyleSheet("font-weight: bold; border: 1px solid #ccc; padding: 5px;")
+        t_layout.addWidget(self.toggle_hotkey_label)
+        
+        self.record_btn_toggle = QPushButton("Record")
+        self.record_btn_toggle.setCheckable(True)
+        self.record_btn_toggle.clicked.connect(lambda: self.toggle_recording("toggle"))
+        t_layout.addWidget(self.record_btn_toggle)
+        self.layout().addLayout(t_layout)
         
         # Recording state
         self.recorded_keys = set()
-        self.is_recording_hotkey = False
+        self.recorded_toggle_keys = set()
+        self.active_recording_mode = None # "hold" or "toggle"
         
         # Save/Cancel
         buttons = QHBoxLayout()
@@ -107,23 +133,39 @@ class SettingsWindow(QWidget):
                 if current_path == dev.path:
                     self.kbd_combo.setCurrentIndex(self.kbd_combo.count() - 1)
 
-    def toggle_recording(self):
-        if self.record_btn.isChecked():
-            self.is_recording_hotkey = True
-            self.recorded_keys = set()
-            self.hotkey_label.setText("Press keys... (Wait 1s after release)")
-            self.record_btn.setText("Stop")
+    def toggle_recording(self, mode):
+        btn = self.record_btn_hold if mode == "hold" else self.record_btn_toggle
+        
+        if btn.isChecked():
+            # If the other one was recording, stop it
+            if self.active_recording_mode and self.active_recording_mode != mode:
+                (self.record_btn_hold if self.active_recording_mode == "hold" else self.record_btn_toggle).setChecked(False)
+            
+            self.active_recording_mode = mode
+            if mode == "hold":
+                self.recorded_keys = set()
+                self.hotkey_label.setText("Press... (Wait 1s after release)")
+            else:
+                self.recorded_toggle_keys = set()
+                self.toggle_hotkey_label.setText("Press... (Wait 1s after release)")
+            
+            btn.setText("Stop")
             self.grabKeyboard()
         else:
             self.stop_recording()
 
     def stop_recording(self):
-        self.is_recording_hotkey = False
-        self.record_btn.setChecked(False)
-        self.record_btn.setText("Record")
+        self.active_recording_mode = None
+        self.record_btn_hold.setChecked(False)
+        self.record_btn_hold.setText("Record")
+        self.record_btn_toggle.setChecked(False)
+        self.record_btn_toggle.setText("Record")
         self.releaseKeyboard()
+        
         if not self.recorded_keys:
             self.hotkey_label.setText(", ".join(self.config.get("hotkey")))
+        if not self.recorded_toggle_keys:
+            self.toggle_hotkey_label.setText(", ".join(self.config.get("toggle_hotkey")))
 
     def keyPressEvent(self, event):
         if self.is_recording_hotkey:
@@ -140,9 +182,8 @@ class SettingsWindow(QWidget):
     # I'll implement a simple Qt key mapper for common keys.
     
     def keyPressEvent(self, event):
-        if self.is_recording_hotkey:
+        if self.active_recording_mode:
             key = event.key()
-            # Map Qt keys to evdev KEY_ names
             mapping = {
                 Qt.Key.Key_Meta: "KEY_LEFTMETA",
                 Qt.Key.Key_Alt: "KEY_LEFTALT",
@@ -153,18 +194,20 @@ class SettingsWindow(QWidget):
                 Qt.Key.Key_Return: "KEY_ENTER",
             }
             
-            # For letters
             if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
                 key_name = f"KEY_{chr(key)}"
             else:
                 key_name = mapping.get(key)
                 if not key_name:
-                    # Fallback to Qt name if possible
                     key_name = f"KEY_{event.text().upper()}" if event.text() else None
             
             if key_name:
-                self.recorded_keys.add(key_name)
-                self.hotkey_label.setText(", ".join(sorted(list(self.recorded_keys))))
+                if self.active_recording_mode == "hold":
+                    self.recorded_keys.add(key_name)
+                    self.hotkey_label.setText(", ".join(sorted(list(self.recorded_keys))))
+                else:
+                    self.recorded_toggle_keys.add(key_name)
+                    self.toggle_hotkey_label.setText(", ".join(sorted(list(self.recorded_toggle_keys))))
         else:
             super().keyPressEvent(event)
 
@@ -179,12 +222,20 @@ class SettingsWindow(QWidget):
         kbd_path = self.kbd_combo.currentData()
         self.config.set("evdev_device", kbd_path)
         
-        # Hotkey
+        # Hotkeys
         if self.recorded_keys:
             self.config.set("hotkey", sorted(list(self.recorded_keys)))
+        if self.recorded_toggle_keys:
+            self.config.set("toggle_hotkey", sorted(list(self.recorded_toggle_keys)))
+        
+        # Inference Mode
+        self.config.set("inference_mode", self.inference_mode_combo.currentText())
         
         # Gain
         self.config.set("mic_gain", self.gain_slider.value() / 10.0)
+        
+        # Overlay
+        self.config.set("show_overlay", self.overlay_checkbox.isChecked())
         
         self.config.save()
         self.settings_saved.emit()

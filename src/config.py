@@ -4,6 +4,8 @@ from pathlib import Path
 
 DEFAULT_CONFIG = {
     "hotkey": ["KEY_LEFTMETA", "KEY_SPACE"],
+    "toggle_hotkey": ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"],
+    "inference_mode": "Balanced",
     "model_size": "base",
     "device": "auto",  # cuda or cpu
     "compute_type": "default",
@@ -11,6 +13,7 @@ DEFAULT_CONFIG = {
     "min_silence_duration_ms": 500,
     "input_device_index": None,  # For PyAudio
     "evdev_device": None, # e.g. /dev/input/event0
+    "show_overlay": True,
 }
 
 CONFIG_PATH = Path.home() / ".config" / "whisper-wayland" / "config.json"

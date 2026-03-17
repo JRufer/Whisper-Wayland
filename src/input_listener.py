@@ -12,9 +12,13 @@ class InputListener(threading.Thread):
         self.on_release = on_release
         self.device = None
         self.target_keys = set()
+        self.target_toggle_keys = set()
         self.hotkey_names = []
+        self.toggle_hotkey_names = []
         self.pressed_keys = set()
         self.running = True
+        self.toggle_state = False
+        self.last_toggle_match = False
 
     def find_device(self):
         saved_path = self.config.get("evdev_device")
@@ -33,18 +37,18 @@ class InputListener(threading.Thread):
 
     def update_hotkey(self):
         self.hotkey_names = self.config.get("hotkey", ["KEY_LEFTMETA", "KEY_SPACE"])
-        print(f"Updating hotkey to: {self.hotkey_names}")
+        self.toggle_hotkey_names = self.config.get("toggle_hotkey", ["KEY_LEFTCTRL", "KEY_LEFTMETA", "KEY_SPACE"])
+        
+        print(f"Updating hotkeys: Hold={self.hotkey_names}, Toggle={self.toggle_hotkey_names}")
+        
         self.target_keys = {ecodes.ecodes[name] for name in self.hotkey_names}
+        self.target_toggle_keys = {ecodes.ecodes[name] for name in self.toggle_hotkey_names}
+        
         self.pressed_keys.clear()
 
     def update_device(self):
         print("Triggering input device re-selection...")
-        # Since read_loop is blocking in another thread, we'll just let find_device
-        # pick the new one on the next iteration if the current one is disconnected
-        # OR we can force a restart of the loop by setting device to None if they differ.
         if self.device and self.device.path != self.config.get("evdev_device"):
-            # This is tricky because read_loop blocks. 
-            # For now, we'll recommend a restart or try to close it.
             try:
                 self.device.close()
             except:
@@ -63,10 +67,12 @@ class InputListener(threading.Thread):
                     continue
 
                 if self.device:
-                    print(f"[*] Listening on {self.device.path} for {self.hotkey_names}")
+                    print(f"[*] Listening on {self.device.path}")
                 
                 if self.device:
-                    active = False
+                    is_holding_active = False
+                    is_toggle_active = False
+                    
                     for event in self.device.read_loop():
                         if not self.running:
                             break
@@ -81,13 +87,32 @@ class InputListener(threading.Thread):
                                 if scancode in self.pressed_keys:
                                     self.pressed_keys.discard(scancode)
                             
-                            is_match = self.target_keys.issubset(self.pressed_keys)
-                            if is_match and not active:
-                                active = True
-                                self.on_press()
-                            elif not is_match and active:
-                                active = False
-                                self.on_release()
+                            # Check Hold Hotkey
+                            is_hold_match = self.target_keys.issubset(self.pressed_keys)
+                            if is_hold_match and not is_holding_active:
+                                is_holding_active = True
+                                if not is_toggle_active:
+                                    self.on_press()
+                            elif not is_hold_match and is_holding_active:
+                                is_holding_active = False
+                                if not is_toggle_active:
+                                    self.on_release()
+                                    
+                            # Check Toggle Hotkey
+                            is_toggle_match = self.target_toggle_keys.issubset(self.pressed_keys)
+                            
+                            # Edge detection for toggle: trigger only when the match status transitions from False to True
+                            if is_toggle_match and not self.last_toggle_match:
+                                self.toggle_state = not self.toggle_state
+                                print(f"[*] Toggle State: {self.toggle_state}")
+                                if self.toggle_state:
+                                    if not is_holding_active:
+                                        self.on_press()
+                                else:
+                                    if not is_holding_active:
+                                        self.on_release()
+                            
+                            self.last_toggle_match = is_toggle_match
             except Exception as e:
                 print(f"Error in input listener: {e}")
                 time.sleep(1)

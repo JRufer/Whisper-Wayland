@@ -6,11 +6,12 @@ import time
 import os
 
 class InferenceEngine(threading.Thread):
-    def __init__(self, config, audio_queue, text_queue):
+    def __init__(self, config, audio_queue, text_queue, realtime_text_queue):
         super().__init__(daemon=True)
         self.config = config
         self.audio_queue = audio_queue
         self.text_queue = text_queue
+        self.realtime_text_queue = realtime_text_queue
         self.running = True
         self.recording = False
         self.buffer = bytearray()
@@ -90,8 +91,15 @@ class InferenceEngine(threading.Thread):
             for segment in segments:
                 full_text += segment.text
             
-            if full_text.strip():
-                self.text_queue.put(full_text.strip())
+            full_text = full_text.strip()
+            if full_text:
+                if incremental:
+                    self.realtime_text_queue.put(full_text)
+                else:
+                    self.text_queue.put(full_text)
+            elif not incremental:
+                # If we stop recording and there's nothing, maybe clear the UI
+                self.realtime_text_queue.put("")
 
         except Exception as e:
             print(f"Inference error: {e}")
@@ -113,8 +121,11 @@ class InferenceEngine(threading.Thread):
                 except queue.Empty:
                     pass
 
-                # Process every 1s if recording to avoid overhead
-                if self.recording and time.time() - last_proc_time > 1.0:
+                # Process periodically if recording
+                mode = self.config.get("inference_mode", "Balanced")
+                interval = 0.5 if mode == "Aggressive" else 1.5
+                
+                if self.recording and time.time() - last_proc_time > interval:
                     self.process_buffer(incremental=True)
                     last_proc_time = time.time()
                 
