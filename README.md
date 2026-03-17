@@ -2,7 +2,7 @@
 
 Whisper Wayland is a native, on-device voice-to-text (dictation) tool designed for Linux, with first-class support for Wayland (and X11 compatibility). It uses OpenAI's Whisper model (via `faster-whisper`) and Silero VAD to provide fast, accurate, and private transcription that injects text directly into your active window.
 
-![Record On](assets/record_on.png)
+![Record On](assets/banner.png)
 
 ## Features
 

@@ -16,6 +16,15 @@ class SettingsWindow(QWidget):
         self.setMinimumWidth(400)
         self.setLayout(QVBoxLayout())
         
+        # Set Window Icon
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        icon_path = os.path.join(base_dir, "assets", "app_icon.png")
+        if os.path.exists(icon_path):
+            from PyQt6.QtGui import QIcon
+            self.setWindowIcon(QIcon(icon_path))
+        
+   
         # Model Selection
         self.layout().addWidget(QLabel("Whisper Model:"))
         self.model_combo = QComboBox()
