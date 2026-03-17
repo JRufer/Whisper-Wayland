@@ -1,0 +1,113 @@
+import pyaudio
+import threading
+import queue
+import numpy as np
+
+class AudioRecorder(threading.Thread):
+    def __init__(self, config, audio_queue):
+        super().__init__(daemon=True)
+        self.config = config
+        self.audio_queue = audio_queue
+        self.p = pyaudio.PyAudio()
+        self.stream = None
+        self.recording = False
+        self.running = True
+        self.chunk_size = 1024
+        self.target_rate = 16000 # Whisper expects 16kHz
+        self.actual_rate = 16000 # Will be updated on start
+        self._lock = threading.Lock()
+
+    def start_recording(self):
+        if self.recording:
+            return
+        
+        try:
+            device_index = self.config.get("input_device_index")
+            print(f"Starting recording on device index: {device_index}")
+            
+            # Try to find supported sample rate
+            rates_to_try = [16000, 44100, 48000, 32000, 22050]
+            self.stream = None
+            
+            for rate in rates_to_try:
+                try:
+                    self.stream = self.p.open(
+                        format=pyaudio.paInt16,
+                        channels=1,
+                        rate=rate,
+                        input=True,
+                        input_device_index=device_index,
+                        frames_per_buffer=self.chunk_size
+                    )
+                    self.actual_rate = rate
+                    print(f"Successfully opened stream at {rate}Hz")
+                    break
+                except Exception:
+                    continue
+            
+            if not self.stream:
+                raise Exception("Could not find a supported sample rate for this device.")
+                
+            self.recording = True
+            print("Recording started...")
+        except Exception as e:
+            print(f"Failed to start recording: {e}")
+
+    def stop_recording(self):
+        with self._lock:
+            if not self.recording:
+                return
+            self.recording = False
+            if self.stream:
+                try:
+                    self.stream.stop_stream()
+                    self.stream.close()
+                except:
+                    pass
+                self.stream = None
+        print("Recording stopped.")
+
+    def run(self):
+        while self.running:
+            data = None
+            with self._lock:
+                if self.recording and self.stream:
+                    try:
+                        data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+                    except Exception as e:
+                        if self.recording:
+                            print(f"Error reading audio: {e}")
+                        if "Unanticipated host error" in str(e):
+                            self.recording = False
+            
+            if data:
+                try:
+                    # Apply Gain (Boost)
+                    gain = self.config.get("mic_gain", 1.0)
+                    audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+                    
+                    if gain != 1.0:
+                        audio_data *= gain
+                        # Clip and convert back to int16 to avoid overflow
+                        audio_data = np.clip(audio_data, -32768, 32767)
+                    
+                    if self.actual_rate != self.target_rate:
+                        # Resample to 16kHz
+                        num_samples = int(len(audio_data) * self.target_rate / self.actual_rate)
+                        resampled_audio = np.interp(
+                            np.linspace(0.0, 1.0, num_samples, endpoint=False),
+                            np.linspace(0.0, 1.0, len(audio_data), endpoint=False),
+                            audio_data
+                        ).astype(np.int16)
+                        self.audio_queue.put(resampled_audio.tobytes())
+                    else:
+                        self.audio_queue.put(audio_data.astype(np.int16).tobytes())
+                except Exception as e:
+                    print(f"Error processing audio data: {e}")
+            else:
+                threading.Event().wait(0.01)
+
+    def stop(self):
+        self.running = False
+        self.stop_recording()
+        self.p.terminate()
