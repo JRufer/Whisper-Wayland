@@ -15,10 +15,57 @@ class InferenceEngine(threading.Thread):
         self.running = True
         self.recording = False
         self.buffer = bytearray()
+        self.actual_device = "Unknown"
+        self.actual_compute_type = "Unknown"
+        
+        # Setup CUDA environment for pip-installed libraries
+        self._setup_cuda_env()
         
         # Load model with robust fallback
         self.model = self._load_model()
         print("Model loaded.")
+
+    def _setup_cuda_env(self):
+        """
+        Arch Linux workaround: Discover and preload pip-installed CUDA/cuDNN libraries
+        to satisfy ctranslate2's dependencies when system versions are mismatched.
+        """
+        import ctypes
+        import glob
+        
+        # Common locations for pip-installed nvidia-* packages
+        home = os.path.expanduser("~")
+        python_version = f"{os.sys.version_info.major}.{os.sys.version_info.minor}"
+        pip_base = os.path.join(home, ".local", "lib", f"python{python_version}", "site-packages", "nvidia")
+        
+        # We need to find libcublas.so.12 and libcudnn.so.9 (or whatever version is expected)
+        # We'll search for these in the nvidia subfolders
+        lib_search_paths = [
+            os.path.join(pip_base, "cublas", "lib"),
+            os.path.join(pip_base, "cudnn", "lib"),
+            os.path.join(pip_base, "cuda_runtime", "lib"),
+        ]
+        
+        # Add to LD_LIBRARY_PATH for subprocesses/ctranslate2
+        existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        new_paths = []
+        
+        for p in lib_search_paths:
+            if os.path.isdir(p):
+                new_paths.append(p)
+                # Preload key libraries to ensure they are available in the global symbol table
+                # This often bypasses the need for the linker to find them later
+                for lib_name in ["libcublas.so.*", "libcublasLt.so.*", "libcudnn.so.*"]:
+                    for lib_path in glob.glob(os.path.join(p, lib_name)):
+                        try:
+                            # Use RTLD_GLOBAL to make symbols available to other libraries (like ctranslate2)
+                            ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+                        except Exception:
+                            pass
+        
+        if new_paths:
+            os.environ["LD_LIBRARY_PATH"] = ":".join(new_paths + ([existing_ld] if existing_ld else []))
+            print(f"CUDA Environment: Injected {len(new_paths)} library paths from ~/.local")
 
     def _load_model(self):
         model_size = self.config.get("model_size", "base")
@@ -41,6 +88,9 @@ class InferenceEngine(threading.Thread):
             print("Verifying model operationality...")
             dummy_audio = np.zeros(16000, dtype=np.float32)
             list(model.transcribe(dummy_audio, beam_size=1, vad_filter=True))
+            
+            self.actual_device = device
+            self.actual_compute_type = compute_type
             return model
             
         except Exception as e:
@@ -52,6 +102,8 @@ class InferenceEngine(threading.Thread):
                 self.config.set("compute_type", "int8")
                 self.config.save()
                 
+                self.actual_device = "cpu"
+                self.actual_compute_type = "int8"
                 return WhisperModel(
                     model_size, 
                     device="cpu", 

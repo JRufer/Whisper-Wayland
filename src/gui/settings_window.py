@@ -8,9 +8,10 @@ from evdev import ecodes
 class SettingsWindow(QWidget):
     settings_saved = pyqtSignal()
 
-    def __init__(self, config):
+    def __init__(self, config, inference_engine=None):
         super().__init__()
         self.config = config
+        self.inference_engine = inference_engine
         self.setWindowTitle("Whisper Wayland Settings")
         self.setMinimumWidth(400)
         self.setLayout(QVBoxLayout())
@@ -34,6 +35,23 @@ class SettingsWindow(QWidget):
         self.inference_mode_combo.addItems(["Balanced", "Aggressive"])
         self.inference_mode_combo.setCurrentText(self.config.get("inference_mode", "Balanced"))
         self.layout().addWidget(self.inference_mode_combo)
+        
+        # Inference Device Selection
+        self.layout().addWidget(QLabel("Inference Device:"))
+        self.device_type_combo = QComboBox()
+        self.device_type_combo.addItems(["auto", "cuda", "cpu"])
+        self.device_type_combo.setCurrentText(self.config.get("device", "auto"))
+        self.layout().addWidget(self.device_type_combo)
+
+        # Status Label
+        if self.inference_engine:
+            status_text = f"Active: {self.config.get('model_size')} on {self.inference_engine.actual_device} ({self.inference_engine.actual_compute_type})"
+        else:
+            status_text = "Status: Engine not connected"
+            
+        self.status_label = QLabel(status_text)
+        self.status_label.setStyleSheet("color: #666; font-style: italic; margin-bottom: 10px;")
+        self.layout().addWidget(self.status_label)
 
         # Keyboard Device Selection (evdev)
         self.layout().addWidget(QLabel("Keyboard Event Device (evdev):"))
@@ -237,7 +255,18 @@ class SettingsWindow(QWidget):
         # Overlay
         self.config.set("show_overlay", self.overlay_checkbox.isChecked())
         
+        # Inference Device & Auto-Compute
+        new_device = self.device_type_combo.currentText()
+        self.config.set("device", new_device)
+        
+        if new_device == "cpu":
+            self.config.set("compute_type", "int8")
+        elif new_device == "cuda":
+            self.config.set("compute_type", "float16")
+        else: # auto
+            self.config.set("compute_type", "default")
+        
         self.config.save()
         self.settings_saved.emit()
-        QMessageBox.information(self, "Settings", "Settings saved and applied!")
+        QMessageBox.information(self, "Settings", "Settings saved! A restart is required to apply changes to the model.")
         self.close()

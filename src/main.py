@@ -88,7 +88,7 @@ def main():
     state.text_updated.connect(overlay.set_text)
 
     # UI
-    settings_window = SettingsWindow(config)
+    settings_window = SettingsWindow(config, inference)
     tray = WhisperTrayIcon(state)
     tray.settings_action.triggered.connect(settings_window.show)
     settings_window.settings_saved.connect(listener.update_hotkey)

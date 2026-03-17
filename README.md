@@ -6,23 +6,18 @@ Whisper Wayland is a native, on-device voice-to-text (dictation) tool designed f
 
 ## Features
 
-- **On-Device AI**: All transcription happens locally on your machine. No keys or data leave your computer.
-- **Global Hotkey**: Trigger recording with a configurable system-wide shortcut (default: `Super+Space`).
-- **Wayland Compatible**: Uses `evdev` for global input and `uinput` for text injection, bypassing Wayland's security restrictions on traditional key-loggers and injectors.
-- **Premium UI**: Sleek system tray icon with distinct "record button" states.
-- **Settings GUI**: Easy-to-use interface to change models, select audio devices, record new hotkeys, and adjust microphone boost.
-- **Microphone Boost**: In-app software gain control for quiet microphones.
-- **Automatic Fallback**: Gracefully falls back to CPU if no NVIDIA GPU/CUDA is detected.
+- **Near Real-Time Transcription**: See what the AI hears *as you speak* via a floating overlay at the bottom of your screen.
+- **Hands-Free Mode**: Toggle recording on/off with a separate hotkey (instead of holding).
+- **GPU & CPU Support**: Manually select between CPU and CUDA (GPU) in settings with automatic optimization (e.g., `int8` for CPU, `float16` for GPU).
+- **Auto-Optimized CUDA**: Automated discovery of CUDA/cuDNN libraries even in restricted Python environments.
 
 ## Installation
-
-### Prerequisites
 
 You will need `portaudio`, `python`, and `python-pip`.
 
 On Arch Linux:
 ```bash
-sudo pacman -S portaudio python-pip wl-clipboard
+sudo pacman -S portaudio python-pyaudio wl-clipboard
 ```
 
 ### Setup
@@ -33,11 +28,14 @@ sudo pacman -S portaudio python-pip wl-clipboard
    cd whisper-wayland
    ```
 
-2. **Create a virtual environment and install dependencies**:
+2. **Install dependencies**:
+   For the best experience (including GPU support), we recommend using the binary versions of `ctranslate2`:
    ```bash
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
+   # Install core dependencies
+   pip install --user --break-system-packages -r requirements.txt
+   
+   # Optional: For NVIDIA GPU Acceleration (Highly Recommended)
+   pip install --user --break-system-packages nvidia-cublas-cu12 nvidia-cudnn-cu12
    ```
 
 3. **Udev Rules (Required for Hotkeys/Injection)**:
@@ -68,11 +66,15 @@ sudo pacman -S portaudio python-pip wl-clipboard
 
 ### How to Dictate
 
-1.  **Hold** the hotkey (default: `Super+Space`).
-2.  The tray icon will turn **red**, indicating it is recording.
-3.  **Speak** clearly.
-4.  **Release** the hotkey.
-5.  The app will transcribe your speech and automatically **paste/type** it into your active window.
+There are two ways to record:
+
+- **Hold to Talk**: Hold the "Hold" hotkey (default: `Super+Space`), speak, and release.
+- **Toggle to Talk**: Tap the "Toggle" hotkey (default: `Ctrl+Super+Space`) to start, and tap again to stop.
+
+While recording:
+- The tray icon turns **red**.
+- A **floating overlay** appears at the bottom of the screen showing real-time feedback.
+- Upon stopping, the final text is automatically **typed** into your active window.
 
 ## Configuration & Features
 
@@ -89,14 +91,17 @@ Choose the AI model size that fits your system's performance:
 ### 2. Audio Input Device
 Select your primary microphone from the list of detected system devices. The app supports a wide range of hardware, including USB headsets and professional interfaces.
 
-### 3. Keyboard Event Device (evdev)
-Since Wayland restricts global key-logging, Whisper Wayland listens directly to your keyboard's hardware events via `/dev/input`. If you have multiple keyboards (e.g., a laptop keyboard and a custom Swift65), you can select the specific device here.
+### 4. GPU/CPU Device Selection
+Manually select which hardware to use. `CUDA` is recommended for speed. The app automatically applies optimal compute types (`float16` for GPU, `int8` for CPU) to maximize performance.
 
-### 4. Microphone Boost (Software Gain)
-If the AI isn't picking up your voice at normal volumes, use the **Software Gain** slider to digitally amplify the signal (up to 5.0x). This ensures the Whisper model receives a clear signal even from quiet microphones.
+### 5. Hotkeys (Hold & Toggle)
+Configurable triggers for both recording styles. The "Hold" hotkey is great for quick bursts, while "Toggle" is perfect for long-form dictation.
 
-### 5. Global Hotkey
-Customizable trigger for recording. Click **Record**, then press your desired combination (e.g., `Ctrl+Alt+Super+Space`). The app will capture the raw hardware scancodes to ensure reliability across all Wayland compositors.
+### 6. Real-Time Overlay
+A toggle to enable or disable the floating feedback window.
+
+### 7. Microphone Boost (Software Gain)
+If the AI isn't picking up your voice at normal volumes, use the **Software Gain** slider to digitally amplify the signal (up to 5.0x).
 
 ## License
 
