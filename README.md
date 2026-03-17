@@ -74,14 +74,29 @@ sudo pacman -S portaudio python-pip wl-clipboard
 4.  **Release** the hotkey.
 5.  The app will transcribe your speech and automatically **paste/type** it into your active window.
 
-## Configuration
+## Configuration & Features
 
-Access **Settings** by right-clicking the tray icon.
+![Settings Window](assets/settings.png)
 
-- **Model Selection**: Choose between `tiny`, `base`, `small`, etc. (Larger is more accurate but slower).
-- **Audio Device**: Select which microphone to use.
-- **Mic Boost**: Increase sensitivity if the AI isn't picking up your voice.
-- **Hotkey**: Click "Record" and press your desired combination to change the trigger.
+The settings window allows you to fine-tune the dictation experience to match your hardware and preferences.
+
+### 1. Whisper Model
+Choose the AI model size that fits your system's performance:
+- **Tiny/Base**: Extremely fast, low resource usage, good for clear speech.
+- **Small/Medium**: Better accuracy, especially for accents or noisy environments.
+- **Large-v3**: Highest accuracy, requires more VRAM/compute power.
+
+### 2. Audio Input Device
+Select your primary microphone from the list of detected system devices. The app supports a wide range of hardware, including USB headsets and professional interfaces.
+
+### 3. Keyboard Event Device (evdev)
+Since Wayland restricts global key-logging, Whisper Wayland listens directly to your keyboard's hardware events via `/dev/input`. If you have multiple keyboards (e.g., a laptop keyboard and a custom Swift65), you can select the specific device here.
+
+### 4. Microphone Boost (Software Gain)
+If the AI isn't picking up your voice at normal volumes, use the **Software Gain** slider to digitally amplify the signal (up to 5.0x). This ensures the Whisper model receives a clear signal even from quiet microphones.
+
+### 5. Global Hotkey
+Customizable trigger for recording. Click **Record**, then press your desired combination (e.g., `Ctrl+Alt+Super+Space`). The app will capture the raw hardware scancodes to ensure reliability across all Wayland compositors.
 
 ## License
 
